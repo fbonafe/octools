@@ -3,6 +3,8 @@ import glob
 import numpy as np
 from scipy import interpolate
 
+hbar = 0.658
+
 #Dipole Moment
 def DipoleFieldVec():
     path = './td.general/'
@@ -75,6 +77,7 @@ def Forces():
     
     forcePerStep = torquePerStep = time = np.zeros((len(forcefiles)))
     torquePerSite = np.zeros((len(forcefiles),natoms))
+    
 
     with open(forcefiles[0],'r+') as f:
         f.readline()
@@ -123,9 +126,35 @@ def Forces():
             forcePerStep[i] = totalForce
             torquePerStep[i] = totalTorque
     
+    mInertia = momentInertia(natoms,el,x,y)
+    angAcceleration = torquePerStep/mInertia
+    
     g.close()
     
-    return time,forcePerStep,torquePerStep,torquePerSite
+    return time,forcePerStep,torquePerStep,torquePerSite,angAcceleration
+    
+def AlfaOmegaTheta(time,torque,alfa): #$\alpha$ aceleracion angular
+    def integ(x, tck, constant=0):
+        x = np.atleast_1d(x)
+        out = np.zeros(x.shape[0], dtype=x.dtype)
+        for n in xrange(len(out)):
+            out[n] = interpolate.splint(0, x[n], tck)
+    #    out += constant
+        return out
+
+    npoints=4000
+
+    timenew,torquenew = Interpol(time,torque,npoints)
+    tck = interpolate.splrep(time,alfa,s=0)
+    omega = integ(time,tck)   # r'$\omega$ velocidad angular'
+    
+    tck2 = interpolate.splrep(timetor,torqueint,s=0)
+    theta = integ(time,tck2) # $\theta$ angulo de rotacion
+
+    time = time*hbar
+    
+    return time,alfa,omega,theta
+
 
 
 def momentInertia(natoms,name,x,y):
@@ -143,7 +172,3 @@ def momentInertia(natoms,name,x,y):
             raise(SystemExit)
     moment_inertia = m_inertia*293.227 # In hbar^2/eV
     return moment_inertia
-
-
-
-#Torque
