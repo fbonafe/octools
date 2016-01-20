@@ -2,8 +2,13 @@
 import glob
 import numpy as np
 from scipy import interpolate
+from cubetools.cube import *
+from cubetools.plotters import *
+
 
 hbar = 0.658
+dens0 = np.empty(0)
+outevery = 50 # In general
 
 class dynamics:
     def __init__(self,time,field,dipole,forces,torque,alfa,omega,theta,charge,energy,mudot,muddot,torquepersite,muabs,muphi):
@@ -31,13 +36,14 @@ def Interpol(datax,datay,npoints):
 
 
 # This loads all the relevant data
-def loadData(out_every):
+def loadData(out_every,prepath='./'):
     
-    time,field,mu,charge = DipoleFieldVec()
+    time,field,mu,charge = dipoleFieldVec()
     dt = time[1]-time[0]
     npoints = time.shape[0]
+    outevery = out_every 
     
-    force,torque,torquePerSite,alfa = Forces(time,dt*out_every)
+    force,torque,torquePerSite,alfa = forces(prepath,time,dt*out_every)
     
     muabs = np.sqrt(mu[0]**2+mu[1]**2+mu[2]**2)
     
@@ -47,28 +53,41 @@ def loadData(out_every):
         if muphi[i] < muphi[i-1]:
             muphi[i:] = 2*np.pi + muphi[i:]
         
-    mudot = MuDot(time,muabs)
-    muddot = MuDDot(time,muabs)
-    omega,theta = AlphaOmegaTheta(time,alfa)
-    energy = Energy()
+    mudot = muDot(time,muabs)
+    muddot = muDDot(time,muabs)
+    omega,theta = alphaOmegaTheta(time,alfa)
+    energ = energy()
     
-    return dynamics(time,field,mu,force,torque,alfa,omega,theta,charge,energy,mudot,muddot,torquePerSite,muabs,muphi)
+    return dynamics(time,field,mu,force,torque,alfa,omega,theta,charge,energ,mudot,muddot,torquePerSite,muabs,muphi)
    
 
 #################################################################
 # This quantities are NOT automatically calculated by loadData,
 # should be used separately.
 
-def Epot(efield,mu):
+def time():
+    t = []
+    path = './td.general/'
+    with open(path+'multipoles','r') as multipoles:
+        for line in multipoles:
+            sl = line.strip()
+            if not sl.startswith("#"):
+                l = line.split()
+                t.append(float(l[1]))
+    t = np.array(t)*hbar
+    return t # time in fs
+                
+                            
+def ePot(efield,mu):
     epot = mu[0]*efield[0]+mu[1]*efield[1]+mu[2]*efield[2]
     return epot
 
-def TorqueNuc(efield,mu):
+def torqueNuc(efield,mu):
     torque = efield[0]*mu[1]-mu[0]*efield[1]
     return torque
 #################################################################
 
-def Energy():
+def energy():
     path = './td.general/'
     e = []
     with open(path+'energy','r') as laser:
@@ -81,7 +100,7 @@ def Energy():
     return e
 
 #Dipole Moment
-def DipoleFieldVec():
+def dipoleFieldVec():
     path = './td.general/'
     ex, ey, ez, mux, muy, muz, time, charge = [], [], [], [], [], [], [], []
     
@@ -115,13 +134,13 @@ def DipoleFieldVec():
 
 #DipoleMomentDervivative
 
-def MuDot(time,mu):
+def muDot(time,mu):
     tck,uout = interpolate.splprep([time,mu],s=0.,k=2,per=False)
     dx,dy = interpolate.splev(uout,tck,der=1)
     mudot = dy/dx
     return mudot
     
-def MuDDot(time,mu):
+def muDDot(time,mu):
     tck,uout = interpolate.splprep([time,mu],s=0.,k=2,per=False)
     dx,dy = interpolate.splev(uout,tck,der=1)
     mudot = dy/dx
@@ -132,9 +151,9 @@ def MuDDot(time,mu):
     
 #Force
 
-def Forces(realtime,dt): # dt in hbar/eV
-    forcefiles = sorted(glob.glob('td.0*/forces.xsf')) # VERY IMPORTANT TO INCLUDE sorted
-    natoms = sum(1 for line in open('td.0000000/forces.xsf')) - 1
+def forces(path,realtime,dt): # dt in hbar/eV
+    forcefiles = sorted(glob.glob(path+'td.0*/forces.xsf')) # VERY IMPORTANT TO INCLUDE sorted
+    natoms = sum(1 for line in open(path+'td.0000000/forces.xsf')) - 1
     el, idn, x, y, z, fx0, fy0, fz0, fx, fy, fz, torque = [[None]*natoms for i in range(12)]
     nsteps = len(forcefiles)
     
@@ -153,6 +172,10 @@ def Forces(realtime,dt): # dt in hbar/eV
                 idn[j] = 1
             elif el[j] == 'Na':
                 idn[j] = 9
+            elif el[j] == 'Li':
+                idn[j] = 3
+            else:
+                print 'Element mass not known'
             x[j] = float(l[1])
             y[j] = float(l[2])
             z[j] = float(l[3])
@@ -185,7 +208,7 @@ def Forces(realtime,dt): # dt in hbar/eV
                 torquePerSite[i,j] = torque[j]
                 totalTorque += torque[j]
             
-            totalForce = np.sqrt(rForce[1]**2+rForce[2]**2+rForce[3]**2)
+            totalForce = np.sqrt(rForce[0]**2+rForce[1]**2+rForce[2]**2)
             forcePerStep[i] = totalForce
             torquePerStep[i] = totalTorque
             
@@ -203,7 +226,7 @@ def Forces(realtime,dt): # dt in hbar/eV
     
     return force,torque,torquePerSite,alfa
     
-def AlphaOmegaTheta(time,alfa): #$\alpha$ aceleracion angular
+def alphaOmegaTheta(time,alfa): #$\alpha$ aceleracion angular
     def integ(x, tck, constant=0):
         x = np.atleast_1d(x)
         out = np.zeros(x.shape[0], dtype=x.dtype)
@@ -220,7 +243,7 @@ def AlphaOmegaTheta(time,alfa): #$\alpha$ aceleracion angular
     return omega,theta
 
 def momentInertia(natoms,name,x,y):
-    mass = [1.00794, 12.0107, 22.99]
+    mass = [1.00794, 12.0107, 22.99, 6.941]
     m_inertia = 0.0
     for i in range(natoms):
         if name[i] == 'C':
@@ -229,8 +252,97 @@ def momentInertia(natoms,name,x,y):
             m_inertia += mass[0]*(x[i]**2+y[i]**2)
         elif name[i] == 'Na':
             m_inertia += mass[2]*(x[i]**2+y[i]**2)  
+        elif name[i] == 'Li':
+            m_inertia += mass[3]*(x[i]**2+y[i]**2) 
         else:
             print 'Element mass not known'
             raise(SystemExit)
     moment_inertia = m_inertia*293.227 # In hbar^2/eV
     return moment_inertia
+                  
+def currentXY(path,Time,z0,npts=100):
+    times = time()
+    timestep = 50 * int(Time/(times[1]-times[0]) / 50)
+    timename = str(timestep).zfill(7)
+    realpath = path+'td.'+timename
+                  
+    cube1x,coords = genGrid(realpath+'/current-sp1-x.cube')
+    cube1y,coords = genGrid(realpath+'/current-sp1-y.cube')
+    cube2x,coords = genGrid(realpath+'/current-sp2-x.cube')
+    cube2y,coords = genGrid(realpath+'/current-sp2-y.cube')
+    currx = cube1x + cube2x
+    curry = cube1y + cube2y
+    tol = 0.05
+    x = []
+    y = []
+    Ix = []
+    Iy = []              
+    for i in range(currx.z.size):
+        if abs(currx.z[i] - z0) < tol:
+            x.append(currx.x[i])
+            y.append(currx.y[i])
+            Ix.append(currx.isovals[i])
+            Iy.append(curry.isovals[i])
+   
+    xi = np.linspace(min(x),max(x),npts)
+    yi = np.linspace(min(y),max(y),npts)
+    Ixi = griddata(x, y, Ix, xi, yi, interp='linear')
+    Iyi = griddata(x, y, Iy, xi, yi, interp='linear')
+    return xi,yi,Ixi,Iyi
+
+                  
+def densityXY(path,Time,z0,npts=100):
+    global dens0
+    times = time()
+    timestep = 50 * int(Time/(times[1]-times[0]) / 50)
+    timename = str(timestep).zfill(7)
+    realpath = path+'td.'+timename
+    
+    if dens0.size == 0:
+        cube10,coords = genGrid(path+'td.0000000/density-sp1.cube')
+        cube20,coords = genGrid(path+'td.0000000/density-sp2.cube')
+        cube0 = cube10 + cube20
+        dens0 = cube0.isovals
+        print 'Cube data at t=0 loaded'
+        
+    cube1,coords = genGrid(realpath+'/density-sp1.cube')
+    cube2,coords = genGrid(realpath+'/density-sp2.cube')
+    cube = cube1 + cube2
+    cube.isovals = cube.isovals - dens0
+    tol = 0.05
+    x = []
+    y = []
+    dens = []
+    for i in range(cube.z.size):
+        if abs(cube.z[i] - z0) < tol:
+            x.append(cube.x[i])
+            y.append(cube.y[i])
+            dens.append(cube.isovals[i])
+   
+    xi = np.linspace(min(x),max(x),npts)
+    yi = np.linspace(min(y),max(y),npts)
+    densi = griddata(x, y, dens, xi, yi, interp='linear')
+    return xi,yi,densi
+
+
+def coords(realpath):
+    cube0,coords = genGrid(realpath+'td.0000000/density-sp1.cube')
+    return coords
+
+def toalCurrent(path,timestep,out_every,npts=100):
+    """ current as 3D-vector as a function of 3D-coordinates. Not finished. 
+    """
+    timename = str(timestep*out_every).zfill(7)
+    realpath = path+'td.'+timename
+    cube1x,coords = genGrid(realpath+'/current-sp1-x.cube')
+    cube1y,coords = genGrid(realpath+'/current-sp1-y.cube')
+    cube1z,coords = genGrid(realpath+'/current-sp1-z.cube')
+    cube2x,coords = genGrid(realpath+'/current-sp2-x.cube')
+    cube2y,coords = genGrid(realpath+'/current-sp2-y.cube')
+    cube2z,coords = genGrid(realpath+'/current-sp2-z.cube')
+    
+    currx = cube1x + cube2x
+    curry = cube1y + cube2y
+    curry = cube1z + cube2z 
+    
+    return 0 #unfinished
