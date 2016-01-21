@@ -27,12 +27,12 @@ def readCube(filename):
          
         def __add__(self,other): #untested
             result = self
-            result.isovals = self.isovals + other.isovals
+            result.isovals = [sum(x) for x in zip(self.isovals,other.isovals)]
             return result
         
         def __add__(self,other): #untested
             result = self
-            result.isovals = self.isovals - other.isovals
+            result.isovals = [x-y for x,y in zip(self.isovals,other.isovals)]
             return result
         
     
@@ -92,11 +92,21 @@ def readCube(filename):
     
 def genGrid(filename):
     class Grid:
-        def __init__(self,x,y,z,isoval):    
+        def __init__(self,x,y,z,isoval,x0,y0,z0,pointsx,pointsy,pointsz,voldx,voldy,voldz):    
             self.x=x
             self.y=y
             self.z=z
             self.isovals=isoval
+            self.x0=x0
+            self.y0=y0
+            self.z0=z0
+            self.nx=pointsx
+            self.ny=pointsy
+            self.nz=pointsz
+            self.dx=voldx
+            self.dy=voldy
+            self.dz=voldz
+            self.dv=voldx*voldy*voldz
             
         def __add__(self,other): #untested
             result = self
@@ -128,9 +138,10 @@ def genGrid(filename):
                 xs.append(x)
                 ys.append(y)
                 zs.append(z)
-    return Grid(np.array(xs),np.array(ys),np.array(zs),np.array(CubeFile.isovals)),Coords
-    
-def plotXY(CubeFile,isovalues):
+    return Grid(np.array(xs),np.array(ys),np.array(zs),np.array(CubeFile.isovals),CubeFile.x0,CubeFile.y0,CubeFile.z0, \
+               CubeFile.nx,CubeFile.ny,CubeFile.nz,CubeFile.dx,CubeFile.dy,CubeFile.dz),Coords
+
+def intZ(CubeFile):
     class Grid:
         def __init__(self,x,y,isoval):    
             self.x=x
@@ -138,26 +149,28 @@ def plotXY(CubeFile,isovalues):
             self.isoval=isoval
             
     bohr_to_angst = 0.529177
-#    isovalues=CubeFile.isovals
-#    aux = list(isovalues)
-    isovalues.reverse()
+    isovalues=CubeFile.isovals
+#    isovalues.reverse()
     xs = []
     ys = []
-    dens = []    
+    dens = []
+    i = 0
     for ix in range(CubeFile.nx):
         for iy in range(CubeFile.ny):
             x = bohr_to_angst * (CubeFile.x0 + ix * CubeFile.dx)
             y = bohr_to_angst * (CubeFile.y0 + iy * CubeFile.dy)
             intdens=0.
             for iz in range(CubeFile.nz):
-                val = isovalues.pop()
-                intdens += val
+#                val = isovalues.pop()
+#                intdens += val
+                intdens += isovalues[i]
+                i += 1
             intdens=intdens*CubeFile.dz
             xs.append(x)
             ys.append(y)
             dens.append(intdens)
 #    CubeFile.isovals = aux
-    return Grid(xs,ys,dens)
+    return Grid(np.array(xs),np.array(ys),np.array(dens))
 
 def transDipole(CubeFile1,CubeFile2):
 
@@ -170,12 +183,12 @@ def transDipole(CubeFile1,CubeFile2):
     for ix in range(CubeFile1.nx):
         for iy in range(CubeFile1.ny):
             for iz in range(CubeFile1.nz):
-               x = bohr_to_angst * (CubeFile1.x0 + ix * CubeFile1.dx)
-               y = bohr_to_angst * (CubeFile1.y0 + iy * CubeFile1.dy)
-               z = bohr_to_angst * (CubeFile1.z0 + iz * CubeFile1.dz)
-               prod = iso1.pop() * iso2.pop()
-               transDip = prod**2 * (x**2 + y**2 + z**2)
-               transDipArr.append(transDip)
+                x = bohr_to_angst * (CubeFile1.x0 + ix * CubeFile1.dx)
+                y = bohr_to_angst * (CubeFile1.y0 + iy * CubeFile1.dy)
+                z = bohr_to_angst * (CubeFile1.z0 + iz * CubeFile1.dz)
+                prod = iso1.pop() * iso2.pop()
+                transDip = prod**2 * (x**2 + y**2 + z**2)
+                transDipArr.append(transDip)
     transDipArr.reverse()
     return transDipArr
     

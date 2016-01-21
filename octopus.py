@@ -8,6 +8,9 @@ from cubetools.plotters import *
 
 hbar = 0.658
 dens0 = np.empty(0)
+dens10 = np.empty(0)
+Dens0 = []
+Dens10 = []
 outevery = 50 # In general
 
 class dynamics:
@@ -59,11 +62,62 @@ def loadData(out_every,prepath='./'):
     energ = energy()
     
     return dynamics(time,field,mu,force,torque,alfa,omega,theta,charge,energ,mudot,muddot,torquePerSite,muabs,muphi)
-   
 
-#################################################################
+def saveData(path='./',out_every=50):
+    def pack(a,b):
+        return np.transpose([a,b])
+    def save(name,a,b):
+        np.savetxt(name,np.transpose([a,b]),fmt='%10.5e')
+    
+    run = loadData(out_every,path)
+    
+    time = run.time
+    field = run.field
+    mu = run.mu 
+    forces = run.forces
+    torque = run.torque
+    alfa = run.alfa
+    omega = run.omega
+    theta = run.theta
+    charge = run.charge
+    energy = run.energy 
+    mudot = run.mudot 
+    muddot = run.muddot 
+    torquepersite = run.torquepersite
+    muabs = run.muabs
+    muphi = run.muphi
+    
+    save('fieldx.dat',time,field[0])
+    save('fieldy.dat',time,field[1])
+#    save('fieldz.dat',time,field[2])        
+    save('mux.dat',time,mu[0])
+    save('muy.dat',time,mu[1])
+#    save('muz.dat',time,mu[2])
+    save('muabs.dat',time,muabs)
+    save('forces.dat',time,forces)
+    save('torque.dat',time,torque)
+    save('alfa.dat',time,alfa)
+    save('omega.dat',time,omega)
+    save('theta.dat',time,theta)
+    save('charge.dat',time,charge)
+    save('energy.dat',time,energy)
+    save('mudot.dat',time,mudot)
+    save('muddot.dat',time,muddot)
+    save('muphi.dat',time,muphi)
+    save('muxy.dat',mu[0],mu[1])
+    save('fieldxy.dat',field[0],field[1])
+    
+    epot = ePot(field,mu)
+    torquenuc = torqueNuc(field,mu)
+    
+    save('epot.dat',time,epot)
+    save('torquenuc.dat',time,torquenuc)
+
+
+################################################################
 # This quantities are NOT automatically calculated by loadData,
 # should be used separately.
+
 
 def time():
     t = []
@@ -86,6 +140,7 @@ def torqueNuc(efield,mu):
     torque = efield[0]*mu[1]-mu[0]*efield[1]
     return torque
 #################################################################
+
 
 def energy():
     path = './td.general/'
@@ -259,8 +314,35 @@ def momentInertia(natoms,name,x,y):
             raise(SystemExit)
     moment_inertia = m_inertia*293.227 # In hbar^2/eV
     return moment_inertia
+
+def currentXY1(path,Time,z0,npts=100):
+    times = time()
+    timestep = 50 * int(Time/(times[1]-times[0]) / 50)
+    timename = str(timestep).zfill(7)
+    realpath = path+'td.'+timename
                   
-def currentXY(path,Time,z0,npts=100):
+    currx,coords = genGrid(realpath+'/current-x.cube')
+    curry,coords = genGrid(realpath+'/current-y.cube')
+
+    tol = 0.05
+    x = []
+    y = []
+    Ix = []
+    Iy = []              
+    for i in range(currx.z.size):
+        if abs(currx.z[i] - z0) < tol:
+            x.append(currx.x[i])
+            y.append(currx.y[i])
+            Ix.append(currx.isovals[i])
+            Iy.append(curry.isovals[i])
+   
+    xi = np.linspace(min(x),max(x),npts)
+    yi = np.linspace(min(y),max(y),npts)
+    Ixi = griddata(x, y, Ix, xi, yi, interp='linear')
+    Iyi = griddata(x, y, Iy, xi, yi, interp='linear')
+    return xi,yi,Ixi,Iyi
+
+def currentXY2(path,Time,z0,npts=100):
     times = time()
     timestep = 50 * int(Time/(times[1]-times[0]) / 50)
     timename = str(timestep).zfill(7)
@@ -291,7 +373,37 @@ def currentXY(path,Time,z0,npts=100):
     return xi,yi,Ixi,Iyi
 
                   
-def densityXY(path,Time,z0,npts=100):
+def densityXY1(path,Time,z0,npts=100):
+    global dens10
+    times = time()
+    timestep = 50 * int(Time/(times[1]-times[0]) / 50)
+    timename = str(timestep).zfill(7)
+    realpath = path+'td.'+timename
+
+    if dens10.size == 0:
+        cube0,coords = genGrid(path+'td.0000000/density.cube')
+        dens10 = cube0.isovals
+        print 'Cube data at t=0 loaded'
+        
+    cube = genGrid(realpath+'/density.cube')
+    cube.isovals = cube.isovals - dens10
+
+    tol = 0.05
+    x = []
+    y = []
+    dens = []
+    for i in range(cube.z.size):
+        if abs(cube.z[i] - z0) < tol:
+            x.append(cube.x[i])
+            y.append(cube.y[i])
+            dens.append(cube.isovals[i])
+   
+    xi = np.linspace(min(x),max(x),npts)
+    yi = np.linspace(min(y),max(y),npts)
+    densi = griddata(x, y, dens, xi, yi, interp='linear')
+    return xi,yi,densi
+                  
+def densityXY2(path,Time,z0,npts=100):
     global dens0
     times = time()
     timestep = 50 * int(Time/(times[1]-times[0]) / 50)
@@ -319,6 +431,60 @@ def densityXY(path,Time,z0,npts=100):
             y.append(cube.y[i])
             dens.append(cube.isovals[i])
    
+    xi = np.linspace(min(x),max(x),npts)
+    yi = np.linspace(min(y),max(y),npts)
+    densi = griddata(x, y, dens, xi, yi, interp='linear')
+    return xi,yi,densi
+
+def densityInt(path,Time,npts=100):
+    global dens10
+    times = time()
+    timestep = 50 * int(Time/(times[1]-times[0]) / 50)
+    timename = str(timestep).zfill(7)
+    realpath = path+'td.'+timename
+
+    if dens10.size == 0:
+        cube0,coords = genGrid(path+'td.0000000/density.cube')
+        dens10 = cube0.isovals
+        print 'Cube data at t=0 loaded'
+        
+    cube = genGrid(realpath+'/density.cube')
+    cube.isovals = cube.isovals - dens10
+   
+    intCube = intZ(cube)
+    x = intCube.x
+    y = intCube.y
+    dens = intCube.isoval
+   
+    xi = np.linspace(min(x),max(x),npts)
+    yi = np.linspace(min(y),max(y),npts)
+    densi = griddata(x, y, dens, xi, yi, interp='linear')
+    return xi,yi,densi
+
+def densityInt2(path,Time,npts=100):
+    global dens0
+    times = time()
+    timestep = 50 * int(Time/(times[1]-times[0]) / 50)
+    timename = str(timestep).zfill(7)
+    realpath = path+'td.'+timename
+    
+    if dens0.size == 0:
+        cube10,coords = genGrid(path+'td.0000000/density-sp1.cube')
+        cube20,coords = genGrid(path+'td.0000000/density-sp2.cube')
+        cube0 = cube10 + cube20
+        dens0 = cube0.isovals
+        print 'Cube data at t=0 loaded'
+        
+    cube1,coords = genGrid(realpath+'/density-sp1.cube')
+    cube2,coords = genGrid(realpath+'/density-sp2.cube')
+    cube = cube1 + cube2
+    cube.isovals = cube.isovals - dens0
+    
+    intCube = intZ(cube)
+    x = intCube.x
+    y = intCube.y
+    dens = intCube.isoval
+
     xi = np.linspace(min(x),max(x),npts)
     yi = np.linspace(min(y),max(y),npts)
     densi = griddata(x, y, dens, xi, yi, interp='linear')
