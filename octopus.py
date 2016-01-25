@@ -14,11 +14,11 @@ Dens10 = []
 outevery = 50 # In general
 
 class dynamics:
-    def __init__(self,time,field,dipole,forces,torque,alfa,omega,theta,charge,energy,mudot,muddot,torquepersite,muabs,muphi):
+    def __init__(self,time,field,dipole,force,torque,alfa,omega,theta,charge,energy,mudot,muddot,torques,forces,muabs,muphi):
         self.time = time
         self.field = field
         self.mu = dipole
-        self.forces = forces
+        self.force = force
         self.torque = torque
         self.alfa = alfa
         self.omega = omega
@@ -27,7 +27,8 @@ class dynamics:
         self.energy = energy
         self.mudot = mudot
         self.muddot = muddot
-        self.torquepersite = torquepersite
+        self.torques = torques
+        self.forces = forces
         self.muabs = muabs
         self.muphi = muphi
 
@@ -40,13 +41,14 @@ def Interpol(datax,datay,npoints):
 
 # This loads all the relevant data
 def loadData(out_every,prepath='./'):
-    
-    time,field,mu,charge = dipoleFieldVec()
+    ndirs = len(glob.glob('td.0*'))
+    nsteps = ndirs * out_every
+
+    time,field,mu,charge = dipoleFieldVec(nsteps)
     dt = time[1]-time[0]
-    npoints = time.shape[0]
-    outevery = out_every 
-    
-    force,torque,torquePerSite,alfa = forces(prepath,time,dt*out_every)
+#    npoints = time1.shape[0]
+   
+    force,torque,torques,fforces,alfa = forces(prepath,time,dt*out_every)
     
     muabs = np.sqrt(mu[0]**2+mu[1]**2+mu[2]**2)
     
@@ -60,8 +62,10 @@ def loadData(out_every,prepath='./'):
     muddot = muDDot(time,muabs)
     omega,theta = alphaOmegaTheta(time,alfa)
     energ = energy()
+    energ = energ[:nsteps]
     
-    return dynamics(time,field,mu,force,torque,alfa,omega,theta,charge,energ,mudot,muddot,torquePerSite,muabs,muphi)
+    return dynamics(time,field,mu,force,torque,alfa,omega,theta,charge,energ,mudot,muddot,torques,fforces,muabs,muphi)
+
 
 def saveData(path='./',out_every=50):
     def pack(a,b):
@@ -74,7 +78,7 @@ def saveData(path='./',out_every=50):
     time = run.time
     field = run.field
     mu = run.mu 
-    forces = run.forces
+    force = run.force
     torque = run.torque
     alfa = run.alfa
     omega = run.omega
@@ -83,7 +87,7 @@ def saveData(path='./',out_every=50):
     energy = run.energy 
     mudot = run.mudot 
     muddot = run.muddot 
-    torquepersite = run.torquepersite
+    torques = run.torques
     muabs = run.muabs
     muphi = run.muphi
     
@@ -94,7 +98,7 @@ def saveData(path='./',out_every=50):
     save('muy.dat',time,mu[1])
 #    save('muz.dat',time,mu[2])
     save('muabs.dat',time,muabs)
-    save('forces.dat',time,forces)
+    save('forces.dat',time,force)
     save('torque.dat',time,torque)
     save('alfa.dat',time,alfa)
     save('omega.dat',time,omega)
@@ -155,7 +159,7 @@ def energy():
     return e
 
 #Dipole Moment
-def dipoleFieldVec():
+def dipoleFieldVec(nsteps):
     path = './td.general/'
     ex, ey, ez, mux, muy, muz, time, charge = [], [], [], [], [], [], [], []
     
@@ -180,9 +184,10 @@ def dipoleFieldVec():
                 ez.append(float(l[4]))
     
     time = np.array(time)*hbar
-    charge = np.array(charge)
+    time = time[:nsteps]
+    charge = np.array(charge[:nsteps])
     efield = np.array([ex[:len(time)],ey[:len(time)],ez[:len(time)]])
-    mu = np.array([mux,muy,muz])
+    mu = np.array([mux[:nsteps],muy[:nsteps],muz[:nsteps]])
     
     return time,efield,mu,charge
 
@@ -214,8 +219,8 @@ def forces(path,realtime,dt): # dt in hbar/eV
     
     forcePerStep, torquePerStep, time = np.zeros((nsteps)), np.zeros((nsteps)), np.zeros((nsteps))
     torquePerSite = np.zeros((nsteps,natoms))
+    forcePerSite = np.zeros((nsteps,natoms,3))
     
-
     with open(forcefiles[0],'r+') as f:
         f.readline()
         for j,line in enumerate(f):
@@ -247,7 +252,7 @@ def forces(path,realtime,dt): # dt in hbar/eV
         g.write('ATOMS %i \n' % (i+1))
         with open(ffile,'r+') as f:
             f.readline()
-            rForce = [0.,0.,0.]
+            rForce = np.array([0.,0.,0.])
             totalTorque = 0.
             for j,line in enumerate(f):
                 l = line.split()
@@ -257,10 +262,11 @@ def forces(path,realtime,dt): # dt in hbar/eV
                 # Write to AXSF file
                 g.write("%i %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f \n" % (idn[j],x[j],y[j],z[j],fx[j],fy[j],fz[j]))
                 # Calculate net force
-                rForce += [fx[j],fy[j],fz[j]]
+                rForce += fx[j],fy[j],fz[j]
                 # Calculate torque
                 torque[j] = x[j]*fy[j]-y[j]*fx[j]
                 torquePerSite[i,j] = torque[j]
+                forcePerSite[i,j,:] = fx[j], fy[j], fz[j] 
                 totalTorque += torque[j]
             
             totalForce = np.sqrt(rForce[0]**2+rForce[1]**2+rForce[2]**2)
@@ -276,11 +282,16 @@ def forces(path,realtime,dt): # dt in hbar/eV
     alfa = torque/mInertia
     
     torquePerSite2 = np.zeros((npoints,natoms))
+    forcePerSite2 = np.zeros((npoints,natoms,3))
     for i in range(natoms):
-        timenew,torquePerSite2[:,i] = Interpol(time,torquePerSite[:,i],npoints)
+        time2,torquePerSite2[:,i] = Interpol(time,torquePerSite[:,i],npoints)
+        time2,forcePerSite2[:,i,0] = Interpol(time,forcePerSite[:,i,0],npoints)
+        time2,forcePerSite2[:,i,1] = Interpol(time,forcePerSite[:,i,1],npoints)
+        time2,forcePerSite2[:,i,2] = Interpol(time,forcePerSite[:,i,2],npoints)
     
-    return force,torque,torquePerSite,alfa
-    
+    return force,torque,torquePerSite2,forcePerSite2,alfa
+
+
 def alphaOmegaTheta(time,alfa): #$\alpha$ aceleracion angular
     def integ(x, tck, constant=0):
         x = np.atleast_1d(x)

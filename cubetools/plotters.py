@@ -42,9 +42,9 @@ def plotXY(coorx,coory,x,y,z,filename):
     #clb.ax.set_ylabel('electrostatic potential / $V$', fontsize=18)
     return figure
 
-def plotPlanarMol(coorx,coory,dbond):
-    coorx = np.array(coorx)
-    coory = np.array(coory)
+def plotPlanarMol(coords,dbond):
+    coorx = coords[0]
+    coory = coords[1]
     plt.scatter(coorx,coory)
     for i in range(coorx.shape[0]):
         for j in range(coory.shape[0]):
